@@ -26,6 +26,26 @@ class SoundManager {
         if (this.masterGain) this.masterGain.gain.value = val;
     }
 
+    playSwitch() {
+        if (!this.ctx || !this.masterGain) return;
+        const t = this.ctx.currentTime;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        
+        osc.type = 'square';
+        osc.frequency.setValueAtTime(400, t);
+        osc.frequency.exponentialRampToValueAtTime(1000, t + 0.02);
+        
+        gain.gain.setValueAtTime(0.05, t);
+        gain.gain.exponentialRampToValueAtTime(0.001, t + 0.05);
+
+        osc.connect(gain);
+        gain.connect(this.masterGain);
+        
+        osc.start(t);
+        osc.stop(t + 0.05);
+    }
+
     playPlayerFootstep() {
         if (!this.ctx || !this.masterGain) return;
         const t = this.ctx.currentTime;
@@ -373,6 +393,7 @@ const App = () => {
         if (e.code === 'KeyF' && gameState === 'playing') {
             isFlashlightOnRef.current = !isFlashlightOnRef.current;
             setIsFlashlightOn(isFlashlightOnRef.current);
+            soundManager.playSwitch();
         }
         if (e.code === 'Escape' && gameState === 'playing') {
              document.exitPointerLock();
@@ -648,22 +669,59 @@ const App = () => {
         const group = new THREE.Group();
         group.position.set(x, 2, z);
         group.rotation.y = rotationY;
-        const glass = new THREE.Mesh(
-            new THREE.PlaneGeometry(1.5, 1.5),
-            new THREE.MeshStandardMaterial({ color: 0x000000, roughness: 0.05, metalness: 0.9 })
-        );
-        glass.position.z = 0.05; 
+
+        const frameMat = new THREE.MeshStandardMaterial({ color: 0x3d271e, roughness: 0.8 });
+        const glassMat = new THREE.MeshStandardMaterial({ color: 0x050510, roughness: 0.1, metalness: 0.9, transparent: true, opacity: 0.9 });
+        const curtainMat = new THREE.MeshStandardMaterial({ color: 0x4B0082, side: THREE.DoubleSide, roughness: 1.0 });
+
+        // Frame
+        const topFrame = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.1, 0.1), frameMat);
+        topFrame.position.set(0, 0.75, 0);
+        group.add(topFrame);
+        
+        const bottomFrame = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.1, 0.15), frameMat); // Sill
+        bottomFrame.position.set(0, -0.75, 0.02);
+        group.add(bottomFrame);
+
+        const leftFrame = new THREE.Mesh(new THREE.BoxGeometry(0.1, 1.6, 0.1), frameMat);
+        leftFrame.position.set(-0.75, 0, 0);
+        group.add(leftFrame);
+
+        const rightFrame = new THREE.Mesh(new THREE.BoxGeometry(0.1, 1.6, 0.1), frameMat);
+        rightFrame.position.set(0.75, 0, 0);
+        group.add(rightFrame);
+
+        // Mullions (Cross)
+        const vMullion = new THREE.Mesh(new THREE.BoxGeometry(0.05, 1.4, 0.05), frameMat);
+        group.add(vMullion);
+        const hMullion = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.05, 0.05), frameMat);
+        group.add(hMullion);
+
+        // Glass
+        const glass = new THREE.Mesh(new THREE.PlaneGeometry(1.4, 1.4), glassMat);
+        glass.position.z = -0.02;
         group.add(glass);
-        const curtainMat = new THREE.MeshStandardMaterial({ color: 0x4B0082, side: THREE.DoubleSide });
-        const leftCurtain = new THREE.Mesh(new THREE.BoxGeometry(0.4, 1.6, 0.1), curtainMat);
-        leftCurtain.position.set(-0.6, 0, 0.1);
-        group.add(leftCurtain);
-        const rightCurtain = new THREE.Mesh(new THREE.BoxGeometry(0.4, 1.6, 0.1), curtainMat);
-        rightCurtain.position.set(0.6, 0, 0.1);
-        group.add(rightCurtain);
-        const topCurtain = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.3, 0.1), curtainMat);
-        topCurtain.position.set(0, 0.7, 0.15);
-        group.add(topCurtain);
+
+        // Curtains (More Voxel-y and draped)
+        const leftCurtainGroup = new THREE.Group();
+        leftCurtainGroup.position.set(-0.6, 0, 0.1);
+        const lc1 = new THREE.Mesh(new THREE.BoxGeometry(0.4, 1.6, 0.1), curtainMat);
+        const lc2 = new THREE.Mesh(new THREE.BoxGeometry(0.2, 1.6, 0.1), curtainMat);
+        lc2.position.set(0.2, 0, 0.05); lc2.rotation.y = -0.3;
+        leftCurtainGroup.add(lc1); leftCurtainGroup.add(lc2);
+        group.add(leftCurtainGroup);
+
+        const rightCurtainGroup = new THREE.Group();
+        rightCurtainGroup.position.set(0.6, 0, 0.1);
+        const rc1 = new THREE.Mesh(new THREE.BoxGeometry(0.4, 1.6, 0.1), curtainMat);
+        const rc2 = new THREE.Mesh(new THREE.BoxGeometry(0.2, 1.6, 0.1), curtainMat);
+        rc2.position.set(-0.2, 0, 0.05); rc2.rotation.y = 0.3;
+        rightCurtainGroup.add(rc1); rightCurtainGroup.add(rc2);
+        group.add(rightCurtainGroup);
+
+        const topValance = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.3, 0.15), curtainMat);
+        topValance.position.set(0, 0.8, 0.15);
+        group.add(topValance);
         
         // Save window position for audio
         windowsRef.current.push(new THREE.Vector3(x, 2, z));
@@ -678,7 +736,6 @@ const App = () => {
         const matBody = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.4 });
         const matScreen = new THREE.MeshStandardMaterial({ color: 0x00ff00, emissive: 0x00ff00, emissiveIntensity: 0.8 });
         
-        // Hitbox mesh (invisible) or just use the body
         const body = new THREE.Mesh(new THREE.BoxGeometry(1, 2, 1), matBody);
         body.position.y = 1;
         body.castShadow = true;
@@ -694,7 +751,14 @@ const App = () => {
         group.add(panel);
 
         scene.add(group);
-        propsRef.current.push(body); // Add body for collision
+
+        // Explicit collision box, slightly larger than visual to prevent clipping
+        const collisionBox = new THREE.Mesh(new THREE.BoxGeometry(1.2, 2, 1.2));
+        collisionBox.position.set(x, 1, z);
+        collisionBox.rotation.y = rot;
+        collisionBox.visible = false;
+        collisionBox.updateMatrixWorld(); // Ensure world matrix is ready
+        propsRef.current.push(collisionBox);
     };
 
     const createTable = (x: number, z: number) => {
@@ -710,7 +774,7 @@ const App = () => {
         group.add(top);
 
         // Cylinder Collider for logic (approximated as Box in generic handler)
-        const collider = new THREE.Mesh(new THREE.BoxGeometry(1.5, 1, 1.5));
+        const collider = new THREE.Mesh(new THREE.BoxGeometry(1.6, 1, 1.6));
         collider.position.set(x, 0.5, z);
         collider.visible = false;
         propsRef.current.push(collider);
@@ -950,8 +1014,7 @@ const App = () => {
         for(let prop of propsRef.current) {
             if (prop.position.distanceTo(position) < 4) {
                 const propBox = new THREE.Box3().setFromObject(prop);
-                // Reduce prop box slightly for smoother movement
-                propBox.expandByScalar(-0.1); 
+                // Increase prop box logic was faulty, now relying on explicit larger collision meshes
                 if(playerBox.intersectsBox(propBox)) return true;
             }
         }
