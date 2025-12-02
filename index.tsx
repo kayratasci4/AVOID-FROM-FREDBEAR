@@ -53,50 +53,65 @@ class SoundManager {
         const gain = this.ctx.createGain();
         const filter = this.ctx.createBiquadFilter();
 
-        osc.type = 'sawtooth'; // Rougher sound for wood/tile
+        osc.type = 'sawtooth'; 
         osc.frequency.setValueAtTime(80, t);
         osc.frequency.exponentialRampToValueAtTime(10, t + 0.1);
 
         filter.type = 'lowpass';
         filter.frequency.setValueAtTime(300, t);
         
-        gain.gain.setValueAtTime(0.2, t);
-        gain.gain.exponentialRampToValueAtTime(0.01, t + 0.1);
+        // Louder footsteps
+        gain.gain.setValueAtTime(0.6, t);
+        gain.gain.exponentialRampToValueAtTime(0.01, t + 0.15);
 
         osc.connect(filter);
         filter.connect(gain);
         gain.connect(this.masterGain);
 
         osc.start(t);
-        osc.stop(t + 0.1);
+        osc.stop(t + 0.15);
     }
 
-    playFootstep(distance: number) {
+    playFredbearFootstep(distance: number) {
         if (!this.ctx || !this.masterGain) return;
         let vol = 1 - (distance / 25);
         if (vol < 0) return;
         
         const t = this.ctx.currentTime;
-        const osc = this.ctx.createOscillator();
-        const gain = this.ctx.createGain();
-        const filter = this.ctx.createBiquadFilter();
+        
+        // Heavy Thud
+        const osc1 = this.ctx.createOscillator();
+        const gain1 = this.ctx.createGain();
+        osc1.type = 'square';
+        osc1.frequency.setValueAtTime(40, t);
+        osc1.frequency.exponentialRampToValueAtTime(10, t + 0.3);
+        gain1.gain.setValueAtTime(vol * 1.0, t);
+        gain1.gain.exponentialRampToValueAtTime(0.01, t + 0.4);
 
-        osc.type = 'square';
-        osc.frequency.setValueAtTime(30, t);
-        osc.frequency.exponentialRampToValueAtTime(5, t + 0.2);
+        // Metallic Clank
+        const osc2 = this.ctx.createOscillator();
+        const gain2 = this.ctx.createGain();
+        const filter2 = this.ctx.createBiquadFilter();
+        osc2.type = 'sawtooth';
+        osc2.frequency.setValueAtTime(150, t); // Metallic resonance
+        osc2.frequency.linearRampToValueAtTime(100, t + 0.1);
+        filter2.type = 'highpass';
+        filter2.frequency.value = 500;
+        
+        gain2.gain.setValueAtTime(vol * 0.4, t);
+        gain2.gain.exponentialRampToValueAtTime(0.01, t + 0.2);
 
-        filter.type = 'lowpass';
-        filter.frequency.setValueAtTime(100, t);
+        osc1.connect(gain1);
+        gain1.connect(this.masterGain);
 
-        gain.gain.setValueAtTime(vol * 0.8, t); 
-        gain.gain.exponentialRampToValueAtTime(0.01, t + 0.3);
+        osc2.connect(filter2);
+        filter2.connect(gain2);
+        gain2.connect(this.masterGain);
 
-        osc.connect(filter);
-        filter.connect(gain);
-        gain.connect(this.masterGain);
-
-        osc.start(t);
-        osc.stop(t + 0.3);
+        osc1.start(t);
+        osc1.stop(t + 0.4);
+        osc2.start(t);
+        osc2.stop(t + 0.2);
     }
 
     playJumpscare() {
@@ -312,6 +327,8 @@ const App = () => {
   const playerRef = useRef<{ position: THREE.Vector3 }>({
     position: new THREE.Vector3(12, 1.5, 4),
   });
+  const playerHeadBobTimerRef = useRef(0);
+
   const fredbearRef = useRef<THREE.Group | null>(null);
   const fredbearAI = useRef({
       state: 'patrol' as 'patrol' | 'chase',
@@ -734,30 +751,67 @@ const App = () => {
         group.position.set(x, 0, z); // Grounded
         group.rotation.y = rot;
         const matBody = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.4 });
+        const matSide = new THREE.MeshStandardMaterial({ color: 0x333333, roughness: 0.5 });
         const matScreen = new THREE.MeshStandardMaterial({ color: 0x00ff00, emissive: 0x00ff00, emissiveIntensity: 0.8 });
-        
+        const matControls = new THREE.MeshStandardMaterial({ color: 0x444444 });
+        const matButtonRed = new THREE.MeshStandardMaterial({ color: 0xff0000, emissive: 0x550000 });
+        const matButtonBlue = new THREE.MeshStandardMaterial({ color: 0x0000ff, emissive: 0x000055 });
+        const matMarquee = new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xffffff, emissiveIntensity: 0.5 });
+
+        // Main Cabinet
         const body = new THREE.Mesh(new THREE.BoxGeometry(1, 2, 1), matBody);
         body.position.y = 1;
         body.castShadow = true;
         group.add(body);
+
+        // Side Panels (visual detail)
+        const sideL = new THREE.Mesh(new THREE.BoxGeometry(0.05, 2, 1.05), matSide);
+        sideL.position.set(-0.52, 1, 0);
+        group.add(sideL);
+        const sideR = new THREE.Mesh(new THREE.BoxGeometry(0.05, 2, 1.05), matSide);
+        sideR.position.set(0.52, 1, 0);
+        group.add(sideR);
         
+        // Screen Recess
         const screen = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.6, 0.1), matScreen);
-        screen.position.set(0, 1.3, 0.5);
+        screen.position.set(0, 1.3, 0.45);
+        screen.rotation.x = -0.2;
         group.add(screen);
 
-        const panel = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.4, 0.4), matBody);
-        panel.position.set(0, 0.8, 0.6);
-        panel.rotation.x = -0.5;
+        // Control Panel
+        const panel = new THREE.Mesh(new THREE.BoxGeometry(1, 0.1, 0.4), matControls);
+        panel.position.set(0, 0.95, 0.6);
+        panel.rotation.x = 0.2;
         group.add(panel);
+
+        // Joystick
+        const stickBase = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.15), matControls);
+        stickBase.position.set(-0.25, 1.05, 0.6); stickBase.rotation.x = 0.2;
+        group.add(stickBase);
+        const stickBall = new THREE.Mesh(new THREE.SphereGeometry(0.04), matButtonRed);
+        stickBall.position.set(-0.25, 1.12, 0.58);
+        group.add(stickBall);
+
+        // Buttons
+        const b1 = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.02), matButtonBlue);
+        b1.position.set(0.1, 1.02, 0.62); b1.rotation.x = 0.2; group.add(b1);
+        const b2 = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.02), matButtonBlue);
+        b2.position.set(0.25, 1.02, 0.62); b2.rotation.x = 0.2; group.add(b2);
+
+        // Marquee
+        const marquee = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.2, 0.1), matMarquee);
+        marquee.position.set(0, 1.85, 0.52);
+        marquee.rotation.x = 0.1;
+        group.add(marquee);
 
         scene.add(group);
 
-        // Explicit collision box, slightly larger than visual to prevent clipping
+        // Collision Box
         const collisionBox = new THREE.Mesh(new THREE.BoxGeometry(1.2, 2, 1.2));
         collisionBox.position.set(x, 1, z);
         collisionBox.rotation.y = rot;
         collisionBox.visible = false;
-        collisionBox.updateMatrixWorld(); // Ensure world matrix is ready
+        collisionBox.updateMatrixWorld();
         propsRef.current.push(collisionBox);
     };
 
@@ -765,19 +819,50 @@ const App = () => {
         const group = new THREE.Group();
         group.position.set(x, 0, z);
         
+        const matWood = new THREE.MeshStandardMaterial({ color: 0x5D4037, roughness: 0.7 });
+        const matChair = new THREE.MeshStandardMaterial({ color: 0x3E2723, roughness: 0.8 });
+        const matPizzaBox = new THREE.MeshStandardMaterial({ color: 0xeeeeee });
+
+        // Table Leg
         const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 1, 8), new THREE.MeshStandardMaterial({ color: 0x333333 }));
         leg.position.y = 0.5;
         group.add(leg);
         
-        const top = new THREE.Mesh(new THREE.CylinderGeometry(0.8, 0.8, 0.1, 16), new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.5 }));
+        // Table Top
+        const top = new THREE.Mesh(new THREE.CylinderGeometry(0.8, 0.8, 0.1, 16), matWood);
         top.position.y = 1;
         group.add(top);
 
-        // Cylinder Collider for logic (approximated as Box in generic handler)
-        const collider = new THREE.Mesh(new THREE.BoxGeometry(1.6, 1, 1.6));
-        collider.position.set(x, 0.5, z);
-        collider.visible = false;
-        propsRef.current.push(collider);
+        // Pizza Box on top
+        const box = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.05, 0.4), matPizzaBox);
+        box.position.set(0, 1.05, 0);
+        box.rotation.y = 0.2;
+        group.add(box);
+
+        // Chairs
+        const createChair = (cx: number, cz: number, rot: number) => {
+             const cGroup = new THREE.Group();
+             cGroup.position.set(cx, 0, cz);
+             cGroup.rotation.y = rot;
+             
+             // Seat
+             const seat = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.1, 0.4), matChair);
+             seat.position.y = 0.5;
+             cGroup.add(seat);
+             // Legs
+             const l1 = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.5, 0.05), new THREE.MeshStandardMaterial({color: 0x222})); l1.position.set(-0.15, 0.25, -0.15); cGroup.add(l1);
+             const l2 = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.5, 0.05), new THREE.MeshStandardMaterial({color: 0x222})); l2.position.set(0.15, 0.25, -0.15); cGroup.add(l2);
+             const l3 = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.5, 0.05), new THREE.MeshStandardMaterial({color: 0x222})); l3.position.set(-0.15, 0.25, 0.15); cGroup.add(l3);
+             const l4 = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.5, 0.05), new THREE.MeshStandardMaterial({color: 0x222})); l4.position.set(0.15, 0.25, 0.15); cGroup.add(l4);
+             // Backrest
+             const back = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.5, 0.05), matChair);
+             back.position.set(0, 0.8, -0.18);
+             cGroup.add(back);
+
+             group.add(cGroup);
+        };
+        createChair(0, 0.9, 0);
+        createChair(0, -0.9, Math.PI);
 
         // Party Hats
         for(let i=0; i<3; i++) {
@@ -786,6 +871,12 @@ const App = () => {
             group.add(hat);
         }
         scene.add(group);
+
+        // Collider
+        const collider = new THREE.Mesh(new THREE.BoxGeometry(1.6, 1, 1.6));
+        collider.position.set(x, 0.5, z);
+        collider.visible = false;
+        propsRef.current.push(collider);
     };
 
     const emptySpots: {x: number, z: number}[] = [];
@@ -864,19 +955,28 @@ const App = () => {
         new THREE.MeshBasicMaterial({ map: createPosterTexture('fredbear') }),
     ];
 
-    const placePoster = (x: number, z: number, rotationY: number) => {
+    const placePosterOnWall = (gx: number, gz: number, direction: 'N'|'S'|'E'|'W') => {
         const mat = posterMats[Math.floor(Math.random() * posterMats.length)];
         const poster = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 2), mat);
-        const offset = 2.05; 
-        poster.position.set(x * MAP_SCALE, 2.5, z * MAP_SCALE);
-        if (Math.abs(rotationY) < 0.1) poster.position.z += offset; 
-        else if (Math.abs(rotationY - Math.PI) < 0.1) poster.position.z -= offset; 
-        else if (Math.abs(rotationY - Math.PI/2) < 0.1) poster.position.x += offset; 
-        else poster.position.x -= offset; 
-        poster.rotation.y = rotationY;
+        const x = gx * MAP_SCALE;
+        const z = gz * MAP_SCALE;
+        const offset = 2.05;
+
+        poster.position.set(x, 2.5, z);
+        
+        if (direction === 'N') { poster.position.z -= offset; poster.rotation.y = Math.PI; } // Back
+        if (direction === 'S') { poster.position.z += offset; poster.rotation.y = 0; } // Front
+        if (direction === 'E') { poster.position.x += offset; poster.rotation.y = -Math.PI/2; } // Right
+        if (direction === 'W') { poster.position.x -= offset; poster.rotation.y = Math.PI/2; } // Left
+        
         scene.add(poster);
     };
-    placePoster(1, 1, Math.PI / 2); placePoster(8, 0, 0); placePoster(13, 8, -Math.PI / 2); 
+
+    // Ensure posters are placed on actual walls
+    if(map[1][0] === 1) placePosterOnWall(0, 1, 'E'); // Left side wall facing inward
+    if(map[0][7] === 1) placePosterOnWall(7, 0, 'S'); // Top wall facing down
+    if(map[8][14] === 1) placePosterOnWall(14, 8, 'W'); // Right wall facing inward
+    if(map[4][4] === 1) placePosterOnWall(4, 4, 'N');
 
     // --- FREDBEAR ---
     const createVoxelFredbear = () => {
@@ -1090,11 +1190,21 @@ const App = () => {
                     soundManager.playPlayerFootstep();
                     playerStepTimerRef.current = 0;
                 }
+
+                // HEAD BOBBING
+                playerHeadBobTimerRef.current += 0.2;
+                camera.position.y = 1.5 + Math.sin(playerHeadBobTimerRef.current) * 0.08;
+
             } else {
                 playerStepTimerRef.current = 30; // Reset so sound plays immediately on move
+                
+                // Reset Head Bob gently or instantly
+                camera.position.y = 1.5;
+                playerHeadBobTimerRef.current = 0;
             }
 
-            camera.position.copy(player.position);
+            camera.position.x = player.position.x;
+            camera.position.z = player.position.z;
 
             // Update Audio Rain Volume based on window proximity
             let minWinDist = 999;
@@ -1212,7 +1322,7 @@ const App = () => {
 
                     ai.footstepTimer++;
                     if(ai.footstepTimer > (25 / (speed * 10))) { 
-                         soundManager.playFootstep(distToPlayer3D);
+                         soundManager.playFredbearFootstep(distToPlayer3D);
                          ai.footstepTimer = 0;
                     }
                 }
@@ -1276,6 +1386,7 @@ const App = () => {
     setIsFlashlightOn(true);
     fredbearAI.current.jumpscareTimer = 0;
     playerStepTimerRef.current = 0;
+    playerHeadBobTimerRef.current = 0;
     
     if(playerRef.current) playerRef.current.position.set(12, 1.5, 4);
     if(fredbearRef.current) {
